@@ -4,6 +4,7 @@
   "description": "为 Operit 的 CommonJS 运行时补齐 Node 核心能力（fs / path / os / buffer / ...）",
   "license": "Apache-2.0",
   "author": "serveryyswys",
+  "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
