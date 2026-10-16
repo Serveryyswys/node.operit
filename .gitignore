@@ -1,0 +1,24 @@
+node_modules/
+*.log
+.DS_Store
+.idea/
+.vscode/
+coverage/
+*.tmp
+
+# tsc 产物：源码在 src/
+/dist/
+
+# 发布产物（npm run package 再生：组装目录 + tarball + PUBLISH.md）
+/build/
+
+# 测试汇总落盘
+/test/last-run.txt
+
+# 端到端集成验证的临时产物
+/integration/node_modules/
+/integration/build/
+/integration/.npm-cache/
+
+# 真机自检的桌面试跑留下的临时目录
+/.device-check-demo/

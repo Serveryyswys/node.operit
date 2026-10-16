@@ -1,0 +1,42 @@
+{
+  "name": "@serveryyswys/node.operit",
+  "version": "0.1.3",
+  "description": "为 Operit 的 CommonJS 运行时补齐 Node 核心能力（fs / path / os / buffer / ...）",
+  "license": "Apache-2.0",
+  "author": "serveryyswys",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./package.json": "./package.json",
+    "./BUILTINS.json": "./BUILTINS.json",
+    "./dist/*": "./dist/*",
+    "./*": "./dist/*.js"
+  },
+  "dependencies": {},
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node test/run-tests.js",
+    "prepack": "npm run build",
+    "test:integration": "node integration/tools/run.js",
+    "package": "node tools/package.js",
+    "verify:artifact": "node integration/tools/verify-artifact.js"
+  },
+  "files": [
+    "dist/",
+    "BUILTINS.json",
+    "README.md",
+    "DESIGN.md",
+    "LICENSE*",
+    "NOTICE"
+  ],
+  "keywords": [
+    "operit",
+    "quickjs",
+    "node-compat",
+    "commonjs",
+    "polyfill",
+    "android",
+    "shim"
+  ]
+}

@@ -1,0 +1,13 @@
+# 统一 LF。
+#
+# 本库有两处**逐字节**校验：LICENSE / NOTICE 的正文，以及打包产物的条目与哈希。
+# 换行符跟着平台变（Windows 检出成 CRLF）会让这些校验结果不稳定，
+# 所以把工作区与索引都钉死在 LF。
+* text=auto eol=lf
+
+# 二进制，别做任何转换
+*.tgz binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jar binary
