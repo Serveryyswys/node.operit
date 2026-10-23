@@ -310,3 +310,7 @@ globalThis.Buffer  = require('<rel>/node_modules/@serveryyswys/node.operit/dist/
 - `v8`：**partial** —— 堆统计字段名与 Node 一致，但取的是 **JVM 堆**；
   `serialize`/`deserialize`/`setFlagsFromString` 等 V8 专有能力显式抛 `ONJ_UNSUPPORTED`
 - 其余见 `BUILTINS.json`
+
+## 许可
+
+**Apache-2.0**。见 `LICENSE` 与 `NOTICE`。

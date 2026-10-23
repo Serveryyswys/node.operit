@@ -10,6 +10,15 @@
  */
 
 /**
+ * CommonJS 的 require —— 由运行时的模块加载器作为**函数参数**注入
+ * （JsExecutionScriptBuilder.kt 的 factory(module, exports, require, __operit_call_runtime)）。
+ *
+ * 这里声明出来是为了在必须**惰性加载**（避免循环依赖）时能用它，
+ * 例如 fs 上的 promises 要指到 fs/promises，而后者自己又 require fs。
+ */
+declare function require(id: string): unknown;
+
+/**
  * prelude 注入的 console（JsExecutionScriptBuilder.kt:53）。
  *
  * 只有这四个方法 —— 没有 debug / assert / table 等。

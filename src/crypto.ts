@@ -314,7 +314,32 @@ const constants = {
     SSL_OP_NO_TLSv1: 0
 };
 
+/**
+ * Web Crypto 的最小可用面。
+ *
+ * getRandomValues / randomUUID 是真实现的（走同一条强随机源）；
+ * subtle 整个是"存在但每个操作都显式拒绝"—— 运行时不提供 WebCrypto 的算法实现，
+ * 给一个看起来像但结果不对的契约比明确报错更糟。
+ */
+const webcrypto = {
+    getRandomValues<T extends ArrayBufferView>(array: T): T {
+        const bytes = randomBytes((array as unknown as Uint8Array).length) as unknown as Uint8Array;
+        (array as unknown as Uint8Array).set(bytes);
+        return array;
+    },
+    randomUUID: randomUUID,
+    subtle: new Proxy({} as Record<string | symbol, unknown>, {
+        get(_target, property) {
+            if (property === Symbol.toStringTag || property === 'then' || property === 'toJSON' || property === 'inspect') {
+                return undefined;
+            }
+            throw unsupported('crypto.webcrypto.subtle.' + String(property));
+        }
+    })
+};
+
 const crypto = {
+    webcrypto: webcrypto,
     createHash: createHash,
     createHmac: createHmac,
     randomBytes: randomBytes,

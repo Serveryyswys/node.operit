@@ -1,5 +1,7 @@
 'use strict';
 
+import unsupportedNodeBuiltin = require('./unsupported');
+
 /**
  * Node Buffer 的移植。
  *
@@ -559,6 +561,20 @@ function checkOffset(offset: number, size: number, length: number): number {
 }
 
 /**
+ * Node 的 Buffer.SlowBuffer：历史别名，等价于 Buffer 本身。
+ * 放在可枚举化那一遍**之前**，这样它和别的静态成员一样可枚举。
+ */
+(Buffer as unknown as Record<string, unknown>).SlowBuffer = Buffer;
+
+/**
+ * Node 的 Buffer.transcode 做的是 ICU 字符集转换，运行时没有 ICU。
+ * 显式抛 ONJ_UNSUPPORTED，而不是给一个静默返回空 Buffer 的实现。
+ */
+(Buffer as unknown as Record<string, unknown>).transcode = function transcode(): never {
+    return unsupportedNodeBuiltin('Buffer.transcode');
+};
+
+/**
  * 把静态成员补成**可枚举的自有属性**。
  *
  * Node 的 Buffer 静态成员是赋值出来的，因此可枚举；而 `class` 的 static 方法不可枚举。
@@ -580,6 +596,17 @@ for (const staticKey of Object.getOwnPropertyNames(Buffer)) {
             configurable: descriptor.configurable === true
         });
     }
+}
+
+/**
+ * Node 的 buffer **模块**把这些直接挂在模块上（不只是挂在 Buffer 类上）。
+ * 包写 `require('buffer').SlowBuffer` 是能拿到的，所以两边都要有。
+ */
+export const SlowBuffer = Buffer;
+
+/** 需要 ICU 字符集转换，运行时没有 —— 显式拒绝而不是静默返回空 Buffer。 */
+export function transcode(): never {
+    return unsupportedNodeBuiltin('Buffer.transcode');
 }
 
 export default Buffer;

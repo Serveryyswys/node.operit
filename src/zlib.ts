@@ -381,7 +381,49 @@ const constants = {
     Z_DEFAULT_WINDOWBITS: 15
 };
 
+/**
+ * zlib 的**类**导出。
+ *
+ * 为什么必须有：`util.inherits(X, zlib.Zlib)` 是流式压缩库的经典写法（pngjs 等），
+ * 拿到 undefined 就会抛 "The superConstructor argument must be a function."；
+ * `new zlib.Gzip()` 也很常见。这里把它们补成可用的构造器。
+ *
+ * 实现方式是"构造器返回现成的流实例"：new 时返回 makeZlibStream 的产物，
+ * 同时给原型挂上 Transform.prototype，这样 util.inherits 与 instanceof 都成立。
+ */
+type ZlibConstructor = {
+    new (options?: DeflateOptions): unknown;
+    prototype: object;
+};
+
+function makeZlibClass(mode: string, direction: 'compress' | 'decompress', label: string): ZlibConstructor {
+    const klass = function Zlib(this: unknown, options?: DeflateOptions): unknown {
+        return makeZlibStream(mode, direction, options);
+    } as unknown as ZlibConstructor;
+    klass.prototype = Object.create(streamModule.Transform.prototype) as object;
+    Object.defineProperty(klass, 'name', { value: label, configurable: true });
+    return klass;
+}
+
+const DeflateClass = makeZlibClass('zlib', 'compress', 'Deflate');
+const InflateClass = makeZlibClass('zlib', 'decompress', 'Inflate');
+const DeflateRawClass = makeZlibClass('raw', 'compress', 'DeflateRaw');
+const InflateRawClass = makeZlibClass('raw', 'decompress', 'InflateRaw');
+const GzipClass = makeZlibClass('gzip', 'compress', 'Gzip');
+const GunzipClass = makeZlibClass('gzip', 'decompress', 'Gunzip');
+const UnzipClass = makeZlibClass('auto', 'decompress', 'Unzip');
+/** 基类：Node 里 Zlib 是所有压缩流的父类，子类继承它。这里给一个等价的 deflate 基类。 */
+const ZlibClass = makeZlibClass('zlib', 'compress', 'Zlib');
+
 const zlib = {
+    Zlib: ZlibClass,
+    Deflate: DeflateClass,
+    Inflate: InflateClass,
+    DeflateRaw: DeflateRawClass,
+    InflateRaw: InflateRawClass,
+    Gzip: GzipClass,
+    Gunzip: GunzipClass,
+    Unzip: UnzipClass,
     deflateSync: deflateSync,
     inflateSync: inflateSync,
     deflateRawSync: deflateRawSync,

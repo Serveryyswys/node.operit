@@ -118,16 +118,41 @@ export function createJavaDriver(): FsDriver {
         return bridge.callInstance(fileOf(target), method, args);
     }
 
+    /**
+     * 单次从 bridge 搬多少字节。
+     *
+     * 为什么必须分块：`Files.readAllBytes` 会把**整个文件**变成一个 JS 数字数组
+     * 再经 JSON 传过来。1MB 的文件就是 ~106 万个元素的数组 + 几 MB 的 JSON 字符串，
+     * 传输链路上任何一次 `apply` / 展开 / 递归转换都会爆栈（真机上 readFile 就炸在这里）。
+     * 64KB 是安全且不至于太碎的量级。
+     */
+    const READ_CHUNK = 64 * 1024;
+
     function readAllBytes(target: string): Uint8Array {
-        const raw = bridge.callStatic('java.nio.file.Files', 'readAllBytes', [pathOf(target)]);
-        if (!Array.isArray(raw)) {
-            throw createError('EIO', 'read');
+        const handle = openHandle(target, { readable: true, writable: false, exclusive: false, truncate: false, append: false });
+        try {
+            const size = handle.size();
+            if (size === 0) {
+                return new Uint8Array(0);
+            }
+            const out = new Uint8Array(size);
+            let offset = 0;
+            while (offset < size) {
+                const want = Math.min(READ_CHUNK, size - offset);
+                const chunk = handle.read(offset, want);
+                if (chunk.length === 0) {
+                    break;
+                }
+                out.set(chunk, offset);
+                offset += chunk.length;
+            }
+            if (offset !== size) {
+                throw createError('EIO', 'read');
+            }
+            return out;
+        } finally {
+            handle.close();
         }
-        const out = new Uint8Array(raw.length);
-        for (let i = 0; i < raw.length; i += 1) {
-            out[i] = (raw[i] as number) & 255;
-        }
-        return out;
     }
 
     function writeAllBytes(target: string, data: Uint8Array, append: boolean, exclusive: boolean): void {

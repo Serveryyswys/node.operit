@@ -1,5 +1,7 @@
 'use strict';
 
+import { makeLegacyCallable } from './lib/legacy-callable';
+
 /**
  * Node events 模块的移植（EventEmitter）。
  *
@@ -60,6 +62,16 @@ function indexFromEnd(list: StoredListener[], fn: EventListener): number {
     return -1;
 }
 
+/**
+ * EventEmitter 的"初始化"。
+ *
+ * 抽成独立函数是为了让老式 `EventEmitter.call(this)` 能用 —— 见 lib/legacy-callable.ts。
+ * stateOf(this) 是按对象惰性建状态的，所以它对任意 this 都成立。
+ */
+function initEventEmitter(self: object): void {
+    stateOf(self);
+}
+
 class EventEmitter {
     static defaultMaxListeners = 10;
     static errorMonitor = errorMonitor;
@@ -97,7 +109,7 @@ class EventEmitter {
     }
 
     constructor() {
-        stateOf(this);
+        initEventEmitter(this);
     }
 
     get maxListeners(): number {
@@ -287,4 +299,21 @@ function removeEntry(emitter: object, name: EventName, fn: EventListener): void 
     }
 }
 
-export = EventEmitter;
+/**
+ * 运行期导出的是**可调用包装**：Node 的 EventEmitter 是普通函数，
+ * 老包的 `EventEmitter.call(this)` 依赖这一点；class 做不到。
+ * 类型仍标注为 class，这样 stream.ts 里 `class Readable extends EventEmitter` 照常可用。
+ */
+const EventEmitterExport = makeLegacyCallable(
+    EventEmitter as unknown as new (...args: never[]) => EventEmitter,
+    'EventEmitter',
+    (self) => { initEventEmitter(self); }
+) as unknown as typeof EventEmitter;
+
+// 类上有 EventEmitter 自引用（Node 的 events.EventEmitter === events），
+// 包装层从 class 拷贝静态成员时会把它指回 class —— 必须改指包装本身，
+// 否则通过 index 聚合拿到的仍是 class，.call(this) 照样抛。
+(EventEmitterExport as unknown as Record<string, unknown>).EventEmitter = EventEmitterExport;
+
+export = EventEmitterExport;
+

@@ -1,6 +1,6 @@
 {
   "name": "@serveryyswys/node.operit",
-  "version": "0.1.3",
+  "version": "0.1.7",
   "description": "为 Operit 的 CommonJS 运行时补齐 Node 核心能力（fs / path / os / buffer / ...）",
   "license": "Apache-2.0",
   "author": "serveryyswys",

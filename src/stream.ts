@@ -1,5 +1,7 @@
 'use strict';
 
+import { makeLegacyCallable } from './lib/legacy-callable';
+
 /**
  * Node stream 模块的移植：Readable / Writable / Duplex / Transform / PassThrough，
  * 以及 pipeline / finished（回调与 Promise 两种）。
@@ -14,6 +16,12 @@
  */
 
 import EventEmitter = require('./events');
+
+/**
+ * events 的运行期导出是可调用包装（见 lib/legacy-callable.ts），
+ * 类型上实例仍是 EventEmitter，所以这里取实例类型用于断言。
+ */
+type EventEmitterInstance = InstanceType<typeof EventEmitter>;
 import { Buffer, type BufferEncoding } from './buffer';
 import type { StreamOptions, WritableLike } from './lib/stream-types';
 
@@ -125,20 +133,74 @@ function decodeChunk(chunk: Uint8Array, encoding: string | null): string {
 
 // ------------------------------------------------------------------ Readable
 
+/**
+ * 各流类的"初始化" —— 与构造函数体**逐字等价**。
+ *
+ * 抽出来的唯一原因：老包写 `Readable.call(this, opts)` 这种继承方式
+ * （Node 的 Readable 是普通函数，class 不是）。把构造体独立成函数后，
+ * 老式调用路径可以把它重放到调用者给的 this 上，效果与 new 完全一致。
+ * 见 lib/legacy-callable.ts。
+ */
+function initReadable(self: object, options?: StreamOptions): void {
+    (EventEmitter as unknown as (this: object) => void).call(self);
+    // 类字段声明（readable = true）也是构造的一部分 —— 抽初始化时最容易漏掉的就是它
+    (self as unknown as { readable: boolean }).readable = true;
+    readableStateOf(self, options);
+    if (options !== undefined) {
+        if (typeof options.read === 'function') {
+            (self as unknown as { _read: unknown })._read = options.read;
+        }
+        if (typeof options.destroy === 'function') {
+            (self as unknown as { _destroy: unknown })._destroy = options.destroy;
+        }
+    }
+}
+
+function initWritable(self: object, options?: StreamOptions): void {
+    (EventEmitter as unknown as (this: object) => void).call(self);
+    // 同上：Writable / Duplex 里都有 writable = true 的类字段声明
+    (self as unknown as { writable: boolean }).writable = true;
+    writableStateOf(self, options);
+    if (options !== undefined) {
+        if (typeof options.write === 'function') {
+            (self as unknown as { _write: unknown })._write = options.write;
+        }
+        if (typeof options.final === 'function') {
+            (self as unknown as { _final: unknown })._final = options.final;
+        }
+        if (typeof options.destroy === 'function') {
+            (self as unknown as { _destroy: unknown })._destroy = options.destroy;
+        }
+    }
+}
+
+function initDuplex(self: object, options?: StreamOptions): void {
+    initReadable(self, options);
+    initWritable(self, options);
+}
+
+function initTransform(self: object, options?: StreamOptions): void {
+    initDuplex(self, options);
+    if (options !== undefined) {
+        if (typeof options.transform === 'function') {
+            (self as unknown as { _transform: unknown })._transform = options.transform;
+        }
+        if (typeof options.flush === 'function') {
+            (self as unknown as { _flush: unknown })._flush = options.flush;
+        }
+    }
+}
+
+function initPassThrough(self: object, options?: StreamOptions): void {
+    initTransform(self, options);
+}
+
 class Readable extends EventEmitter {
     readable = true;
 
     constructor(options?: StreamOptions) {
         super();
-        readableStateOf(this, options);
-        if (options !== undefined) {
-            if (typeof options.read === 'function') {
-                (this as unknown as { _read: unknown })._read = options.read;
-            }
-            if (typeof options.destroy === 'function') {
-                (this as unknown as { _destroy: unknown })._destroy = options.destroy;
-            }
-        }
+        initReadable(this, options);
     }
 
     // 子类覆写
@@ -669,18 +731,7 @@ class Writable extends EventEmitter {
 
     constructor(options?: StreamOptions) {
         super();
-        writableStateOf(this, options);
-        if (options !== undefined) {
-            if (typeof options.write === 'function') {
-                (this as unknown as { _write: unknown })._write = options.write;
-            }
-            if (typeof options.final === 'function') {
-                (this as unknown as { _final: unknown })._final = options.final;
-            }
-            if (typeof options.destroy === 'function') {
-                (this as unknown as { _destroy: unknown })._destroy = options.destroy;
-            }
-        }
+        initWritable(this, options);
     }
 }
 
@@ -700,15 +751,7 @@ class Duplex extends Readable {
 
     constructor(options?: StreamOptions) {
         super(options);
-        writableStateOf(this, options);
-        if (options !== undefined) {
-            if (typeof options.write === 'function') {
-                (this as unknown as { _write: unknown })._write = options.write;
-            }
-            if (typeof options.final === 'function') {
-                (this as unknown as { _final: unknown })._final = options.final;
-            }
-        }
+        initWritable(this, options);
     }
 }
 
@@ -719,14 +762,7 @@ applyWritable(Duplex.prototype);
 class Transform extends Duplex {
     constructor(options?: StreamOptions) {
         super(options);
-        if (options !== undefined) {
-            if (typeof options.transform === 'function') {
-                (this as unknown as { _transform: unknown })._transform = options.transform;
-            }
-            if (typeof options.flush === 'function') {
-                (this as unknown as { _flush: unknown })._flush = options.flush;
-            }
-        }
+        initTransform(this, options);
     }
 
     _transform(chunk: unknown, encoding: string, callback: (error?: Error | null, data?: unknown) => void): void {
@@ -791,7 +827,7 @@ class PassThrough extends Transform {
 // ------------------------------------------------------------------ pipeline / finished
 
 function finished(stream: WritableLike | Readable, callback: (error?: Error | null) => void): () => void {
-    const target = stream as unknown as EventEmitter;
+    const target = stream as unknown as EventEmitterInstance;
     let done = false;
     const onError = (error: unknown): void => {
         if (done) {
@@ -898,7 +934,7 @@ function pipeline(...args: unknown[]): unknown {
             });
         }
         for (let i = 0; i < transforms.length; i += 1) {
-            const current = transforms[i] as unknown as EventEmitter;
+            const current = transforms[i] as unknown as EventEmitterInstance;
             current.on('error', fail);
             if (i + 1 < transforms.length) {
                 (transforms[i] as Readable).pipe(transforms[i + 1] as WritableLike);
@@ -934,7 +970,7 @@ function pipelinePromise(...streams: unknown[]): Promise<void> {
         };
         finished(list[list.length - 1], settle);
         for (let i = 0; i < list.length; i += 1) {
-            (list[i] as unknown as EventEmitter).on('error', settle);
+            (list[i] as unknown as EventEmitterInstance).on('error', settle);
             if (i + 1 < list.length) {
                 (list[i] as Readable).pipe(list[i + 1] as WritableLike);
             }
@@ -970,4 +1006,58 @@ class Stream extends EventEmitter {
     static isWritable = isWritableStream;
 }
 
-export = Stream;
+/**
+ * 运行期导出**可调用包装**。
+ *
+ * 老包（pngjs 等）写 `function PNG() { Stream.call(this); } util.inherits(PNG, Stream);` ——
+ * Node 的 Stream 是普通函数所以合法，class 不行（QuickJS 会抛
+ * "class constructors must be invoked with 'new'"）。Stream 自己没有构造函数，
+ * 初始化就是 EventEmitter 那一份，所以直接转调。
+ * 类型仍标注为 class，静态成员（Readable/Writable/…）由包装层原样拷贝。
+ */
+const StreamExport = makeLegacyCallable(
+    Stream as unknown as new (...args: never[]) => Stream,
+    'Stream',
+    (self: object) => { (EventEmitter as unknown as (this: object) => void).call(self); }
+) as unknown as typeof Stream;
+
+const ReadableExport = makeLegacyCallable(
+    Readable as unknown as new (...args: never[]) => Readable,
+    'Readable',
+    (self: object, args: unknown[]) => { initReadable(self, args[0] as StreamOptions | undefined); }
+) as unknown as typeof Readable;
+
+const WritableExport = makeLegacyCallable(
+    Writable as unknown as new (...args: never[]) => Writable,
+    'Writable',
+    (self: object, args: unknown[]) => { initWritable(self, args[0] as StreamOptions | undefined); }
+) as unknown as typeof Writable;
+
+const DuplexExport = makeLegacyCallable(
+    Duplex as unknown as new (...args: never[]) => Duplex,
+    'Duplex',
+    (self: object, args: unknown[]) => { initDuplex(self, args[0] as StreamOptions | undefined); }
+) as unknown as typeof Duplex;
+
+const TransformExport = makeLegacyCallable(
+    Transform as unknown as new (...args: never[]) => Transform,
+    'Transform',
+    (self: object, args: unknown[]) => { initTransform(self, args[0] as StreamOptions | undefined); }
+) as unknown as typeof Transform;
+
+const PassThroughExport = makeLegacyCallable(
+    PassThrough as unknown as new (...args: never[]) => PassThrough,
+    'PassThrough',
+    (self: object, args: unknown[]) => { initPassThrough(self, args[0] as StreamOptions | undefined); }
+) as unknown as typeof PassThrough;
+
+// 静态槽统一指向包装：包装层会从 class 拷贝静态成员，那些槽会指回 class，
+// 于是"模块上是包装、类上是 class"两套并存 —— 这里全部改成包装，保持一致。
+StreamExport.Readable = ReadableExport;
+StreamExport.Writable = WritableExport;
+StreamExport.Duplex = DuplexExport;
+StreamExport.Transform = TransformExport;
+StreamExport.PassThrough = PassThroughExport;
+StreamExport.Stream = StreamExport;
+
+export = StreamExport;

@@ -414,6 +414,10 @@ function stripVTControlCharacters(value: string): string {
 }
 
 const types = {
+    isAnyArrayBuffer: function (value: unknown): boolean {
+        return value instanceof ArrayBuffer ||
+            (typeof SharedArrayBuffer !== 'undefined' && value instanceof SharedArrayBuffer);
+    },
     isDate: function (value: unknown): boolean {
         return value instanceof Date;
     },

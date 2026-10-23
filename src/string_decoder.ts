@@ -1,5 +1,7 @@
 'use strict';
 
+import { makeLegacyCallable } from './lib/legacy-callable';
+
 /**
  * Node string_decoder 模块的移植。
  *
@@ -64,15 +66,25 @@ function completePrefixLength(bytes: Uint8Array): number {
     return bytes.length;
 }
 
-export class StringDecoder {
-    static StringDecoder = StringDecoder;
+/**
+ * 各字段的初始化 —— 与构造函数体逐字等价，供老式 `StringDecoder.call(this)` 重放。
+ * 见 lib/legacy-callable.ts。
+ */
+function initStringDecoder(self: object, encoding?: string): void {
+    (self as { encoding: string }).encoding = normalizeEncoding(encoding);
+    (self as { pending: Uint8Array }).pending = new Uint8Array(0);
+}
 
-    readonly encoding: string;
-    private pending: Uint8Array;
+class StringDecoderImpl {
+    // 自引用静态（Node 的 string_decoder.StringDecoder 指向自己）；
+    // 包装层会把它拷过去，随后改指包装本身。
+    static StringDecoder = StringDecoderImpl;
+
+    readonly encoding!: string;
+    private pending!: Uint8Array;
 
     constructor(encoding?: string) {
-        this.encoding = normalizeEncoding(encoding);
-        this.pending = new Uint8Array(0);
+        initStringDecoder(this, encoding);
     }
 
     get lastNeed(): number {
@@ -221,3 +233,14 @@ function asciiOf(buffer: Uint8Array): string {
     }
     return out;
 }
+
+const StringDecoderExport = makeLegacyCallable(
+    StringDecoderImpl as unknown as new (...args: never[]) => StringDecoderImpl,
+    'StringDecoder',
+    (self: object, args: unknown[]) => { initStringDecoder(self, args[0] as string | undefined); }
+) as unknown as typeof StringDecoderImpl;
+
+// 同 events：包装层拷贝静态成员会把自引用指回 class，改指包装
+(StringDecoderExport as unknown as Record<string, unknown>).StringDecoder = StringDecoderExport;
+
+export { StringDecoderExport as StringDecoder };

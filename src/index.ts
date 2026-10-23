@@ -54,7 +54,7 @@ import streamConsumersModule = require('./stream/consumers');
 import v8Module = require('./v8');
 
 const api = {
-    version: '0.1.3',
+    version: '0.1.7',
     path: pathModule,
     'path/posix': pathPosixModule,
     'path/win32': pathWin32Module,

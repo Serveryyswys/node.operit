@@ -993,6 +993,15 @@ const constants = {
 };
 
 const fs = {
+    /**
+     * `require('fs').promises` —— 与 fs/promises 子路径**同一个对象**。
+     *
+     * 用惰性 getter 而不是直接 require：fs/promises 自己也 require fs，直接写会成环。
+     * getter 在对象字面量里是可枚举的，所以 for...in 探测（safer-buffer 那种）也能看到它。
+     */
+    get promises(): unknown {
+        return require('./fs/promises');
+    },
     readFileSync: readFileSync,
     writeFileSync: writeFileSync,
     appendFileSync: appendFileSync,
