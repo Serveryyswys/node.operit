@@ -208,7 +208,50 @@ async function run() {
     h.equal(heap.used_heap_size <= heap.total_heap_size, true, 'used <= total');
     h.deepEqual(onj.v8.getHeapSpaceStatistics(), [], 'getHeapSpaceStatistics 返回空数组（QuickJS 不暴露分空间）');
     h.deepEqual(Object.keys(onj.v8.getHeapCodeStatistics()).sort(), Object.keys(nodeV8.getHeapCodeStatistics()).sort(), 'getHeapCodeStatistics 字段名与 Node 一致');
-    var v8Unsupported = ['serialize', 'deserialize', 'setFlagsFromString', 'cachedDataVersionTag', 'writeHeapSnapshot', 'takeCoverage', 'stopCoverage'];
+    // serialize / deserialize 现在是**自洽实现**（带引用表，支持循环引用），不再抛错
+    var roundTrip = {
+        num: 42,
+        float: 3.5,
+        text: '中文',
+        flag: true,
+        nothing: null,
+        list: [1, 'two', { three: 3 }],
+        map: new Map([['k', 'v']]),
+        set: new Set([1, 2]),
+        date: new Date(1700000000000),
+        regexp: /ab+c/gi
+    };
+    roundTrip.self = roundTrip;
+    var decoded = onj.v8.deserialize(onj.v8.serialize(roundTrip));
+    h.equal(decoded.num, 42, 'v8 往返：整数');
+    h.equal(decoded.float, 3.5, 'v8 往返：浮点');
+    h.equal(decoded.text, '中文', 'v8 往返：字符串');
+    h.deepEqual(decoded.list, [1, 'two', { three: 3 }], 'v8 往返：数组与嵌套对象');
+    h.equal(decoded.map.get('k'), 'v', 'v8 往返：Map');
+    h.equal(decoded.set.has(2), true, 'v8 往返：Set');
+    h.equal(decoded.date.getTime(), 1700000000000, 'v8 往返：Date');
+    h.equal(decoded.regexp.source, 'ab+c', 'v8 往返：RegExp');
+    h.equal(decoded.self === decoded, true, 'v8 往返：循环引用保持环');
+
+    // BigInt：以前没有 tag，会被静默写成 undefined
+    h.equal(onj.v8.deserialize(onj.v8.serialize(123456789012345678901234567890n)), 123456789012345678901234567890n, 'v8 往返：BigInt');
+    // TypedArray：以前一律还原成 Uint8Array
+    var i32 = new Int32Array([1, -2, 3]);
+    var back32 = onj.v8.deserialize(onj.v8.serialize(i32));
+    h.equal(Object.prototype.toString.call(back32), '[object Int32Array]', 'v8 往返：Int32Array 类型保持');
+    h.deepEqual(Array.prototype.slice.call(back32), [1, -2, 3], 'v8 往返：Int32Array 内容保持');
+    var f64 = new Float64Array([1.5, -0.25]);
+    h.deepEqual(Array.prototype.slice.call(onj.v8.deserialize(onj.v8.serialize(f64))), [1.5, -0.25], 'v8 往返：Float64Array');
+    // 大载荷：验证可增长缓冲不炸、内容不丢
+    var big = new Uint8Array(1024 * 1024);
+    for (var bi2 = 0; bi2 < big.length; bi2 += 1) { big[bi2] = bi2 & 0xff; }
+    var bigBack = onj.v8.deserialize(onj.v8.serialize({ payload: big }));
+    h.equal(bigBack.payload.length, big.length, 'v8 往返：1MB Uint8Array 长度');
+    h.equal(bigBack.payload[big.length - 1], big[big.length - 1], 'v8 往返：1MB 末字节一致');
+    h.equal(typeof onj.v8.cachedDataVersionTag(), 'number', 'cachedDataVersionTag 返回数字');
+    h.equal(onj.v8.setFlagsFromString('--x'), undefined, 'setFlagsFromString 静默忽略');
+
+    var v8Unsupported = ['writeHeapSnapshot', 'takeCoverage', 'stopCoverage'];
     var notThrown = v8Unsupported.filter(function (name) {
         try {
             onj.v8[name]();

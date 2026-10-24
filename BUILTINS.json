@@ -328,7 +328,7 @@
     "v8": {
       "subpath": "v8",
       "status": "partial",
-      "note": "getHeapStatistics / getHeapSpaceStatistics / getHeapCodeStatistics 可用，但取的是 **JVM 堆**而不是 V8 堆（与 os.totalmem / freemem 的近似同类）；getHeapSpaceStatistics 返回空数组（QuickJS 不暴露分空间统计）。serialize / deserialize / setFlagsFromString / cachedDataVersionTag / writeHeapSnapshot / takeCoverage / stopCoverage 一律显式抛 ONJ_UNSUPPORTED：它们要么依赖 V8 的二进制格式，要么是 V8 专有能力。"
+      "note": "堆统计取自 JVM（QuickJS 不暴露 V8 堆）；serialize/deserialize 为**自洽实现**（带引用表，支持循环引用），不能与 Node 的二进制格式互换；setFlagsFromString 静默忽略；cachedDataVersionTag 返回常量；堆快照与覆盖率仍按 unsupported 处理。"
     },
     "vm": {
       "subpath": "vm",
